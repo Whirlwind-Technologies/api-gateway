@@ -1,0 +1,40 @@
+server:
+  port: 4000
+
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            # Tenant Service API Routes
+            - id: tenant-service-route
+              uri: http://tenant-service:4001
+              predicates:
+                - Path=/api/v1/tenants/**
+
+            # Swagger UI Route
+            - id: tenant-swagger-ui-route
+              uri: http://tenant-service:4001
+              predicates:
+                - Path=/api/v1/swagger-ui/**
+
+            # API Docs accessible to Swagger UI (NEW ROUTE)
+            - id: tenant-api-docs-swagger-route
+              uri: http://tenant-service:4001
+              predicates:
+                - Path=/api/v1/api-docs/**
+
+            # Actuator Routes
+            - id: tenant-actuator-route
+              uri: http://tenant-service:4001
+              predicates:
+                - Path=/api/v1/actuator/**
+
+            # API Docs Route (for external access)
+            - id: api-docs-tenant-route
+              uri: http://tenant-service:4001
+              predicates:
+                - Path=/api-docs/tenants
+              filters:
+                - RewritePath=/api-docs/tenants,/api/v1/api-docs
