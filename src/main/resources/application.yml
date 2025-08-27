@@ -2,39 +2,120 @@ server:
   port: 4000
 
 spring:
+  application:
+    name: api-gateway
+  
   cloud:
     gateway:
       server:
         webflux:
           routes:
-            # Tenant Service API Routes
+          # ============================================
+          # TENANT MANAGEMENT SERVICE ROUTES
+          # ============================================
+
             - id: tenant-service-route
               uri: http://tenant-service:4001
               predicates:
-                - Path=/api/v1/tenants/**
+                - Path=/tenant-management/api/v1/tenants/**
+              filters:
+                - StripPrefix=0  # Keep the full path
+                - name: AddRequestHeader
+                  args:
+                    name: X-Forwarded-Service
+                    value: api-gateway
 
-            # Swagger UI Route
-            - id: tenant-swagger-ui-route
+            # Tenant Provisioning Routes
+            - id: tenant-provisioning-route
+              uri: http://tenant-service:8080
+              predicates:
+                - Path=/tenant-management/api/v1/tenants/*/provisioning/**
+
+
+            # Feature Flag Management Routes
+            - id: tenant-features-route
+              uri: http://tenant-service:8080
+              predicates:
+                - Path=/tenant-management/api/v1/features/**
+              filters:
+                - StripPrefix=0
+
+            # Subscription Management Routes
+            - id: tenant-subscriptions-route
               uri: http://tenant-service:4001
               predicates:
-                - Path=/api/v1/swagger-ui/**
+                - Path=/tenant-management/api/v1/subscriptions/**
 
-            # API Docs accessible to Swagger UI (NEW ROUTE)
-            - id: tenant-api-docs-swagger-route
-              uri: http://tenant-service:4001
+            # Tenant Settings Routes
+            - id: tenant-settings-route
+              uri: http://tenant-service:8080
               predicates:
-                - Path=/api/v1/api-docs/**
+                - Path=/tenant-management/api/v1/settings/**
+              filters:
+                - StripPrefix=0
+
+            # Organization Hierarchy Routes
+            - id: tenant-hierarchy-route
+              uri: http://tenant-service:8080
+              predicates:
+                - Path=/tenant-management/api/v1/hierarchy/**
+              filters:
+                - StripPrefix=0
+
+            # Compliance Management Routes
+            - id: tenant-compliance-route
+              uri: http://tenant-service:8080
+              predicates:
+                - Path=/tenant-management/api/v1/compliance/**
+              filters:
+                - StripPrefix=0
+
+            # Usage Tracking Routes
+            - id: tenant-usage-route
+              uri: http://tenant-service:8080
+              predicates:
+                - Path=/tenant-management/api/v1/usage/**
+              filters:
+                - StripPrefix=0
+
+            # Trial Management Routes
+            - id: tenant-trials-route
+              uri: http://tenant-service:8080
+              predicates:
+                - Path=/tenant-management/api/v1/trials/**
+              filters:
+                - StripPrefix=0
 
             # Actuator Routes
             - id: tenant-actuator-route
               uri: http://tenant-service:4001
               predicates:
-                - Path=/api/v1/actuator/**
+                - Path=/tenant-management/actuator/**
 
-            # API Docs Route (for external access)
-            - id: api-docs-tenant-route
+            # Swagger UI Routes (CRITICAL: Must come before api-docs)
+            - id: tenant-swagger-ui-html-route
               uri: http://tenant-service:4001
               predicates:
-                - Path=/api-docs/tenants
-              filters:
-                - RewritePath=/api-docs/tenants,/api/v1/api-docs
+                - Path=/tenant-management/swagger-ui.html
+
+            - id: tenant-swagger-ui-route
+              uri: http://tenant-service:4001
+              predicates:
+                - Path=/tenant-management/swagger-ui/**
+
+            # API Docs Route (Must come after Swagger UI routes)
+            - id: tenant-api-docs-route
+              uri: http://tenant-service:4001
+              predicates:
+                - Path=/tenant-management/api-docs/**
+
+            - id: tenant-api-docs-base-route
+              uri: http://tenant-service:4001
+              predicates:
+                - Path=/tenant-management/api-docs
+
+
+          
+
+
+
