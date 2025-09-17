@@ -4,118 +4,299 @@ server:
 spring:
   application:
     name: api-gateway
-  
+
+  main:
+    web-application-type: reactive
+    allow-bean-definition-overriding: false
+
   cloud:
     gateway:
       server:
         webflux:
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+
           routes:
-          # ============================================
-          # TENANT MANAGEMENT SERVICE ROUTES
-          # ============================================
-
-            - id: tenant-service-route
-              uri: http://tenant-service:4001
+            # Auth Service Routes
+            - id: auth-service
+              uri: ${AUTH_SERVICE_URL:http://localhost:4002}
               predicates:
-                - Path=/tenant-management/api/v1/tenants/**
+                - Path=/api/v1/auth/**
               filters:
-                - StripPrefix=0  # Keep the full path
-                - name: AddRequestHeader
+                - name: CircuitBreaker
                   args:
-                    name: X-Forwarded-Service
-                    value: api-gateway
+                    name: auth-service
+                    fallbackUri: forward:/fallback/auth
+                - name: RateLimiter
+                  args:
+                    requestsPerSecond: 100
+                    burstCapacity: 200
+                - RewritePath=/api/v1/auth/(?<segment>.*), /auth-service/api/v1/auth/${segment}
 
-            # Tenant Provisioning Routes
-            - id: tenant-provisioning-route
-              uri: http://tenant-service:8080
+            # Auth Service Documentation Routes - Direct auth-service paths (for absolute URLs in swagger config)
+            - id: auth-service-direct-paths
+              uri: ${AUTH_SERVICE_URL:http://localhost:4002}
               predicates:
-                - Path=/tenant-management/api/v1/tenants/*/provisioning/**
-
-
-            # Feature Flag Management Routes
-            - id: tenant-features-route
-              uri: http://tenant-service:8080
-              predicates:
-                - Path=/tenant-management/api/v1/features/**
+                - Path=/auth-service/**
               filters:
                 - StripPrefix=0
 
-            # Subscription Management Routes
-            - id: tenant-subscriptions-route
-              uri: http://tenant-service:4001
+            # Auth Service Documentation Routes - Catch all for docs
+            - id: auth-service-docs-catchall
+              uri: ${AUTH_SERVICE_URL:http://localhost:4002}
               predicates:
-                - Path=/tenant-management/api/v1/subscriptions/**
-
-            # Tenant Settings Routes
-            - id: tenant-settings-route
-              uri: http://tenant-service:8080
-              predicates:
-                - Path=/tenant-management/api/v1/settings/**
+                - Path=/auth-docs/**
               filters:
-                - StripPrefix=0
+                - RewritePath=/auth-docs/(?<segment>.*), /auth-service/$\{segment}
+                - AddRequestHeader=X-Forwarded-Proto, http
+                - AddRequestHeader=X-Forwarded-Host, localhost:4000
+                - AddRequestHeader=X-Forwarded-Port, 4000
+                - AddRequestHeader=X-Forwarded-Prefix, /auth-docs
 
-            # Organization Hierarchy Routes
-            - id: tenant-hierarchy-route
-              uri: http://tenant-service:8080
+            # Auth Service Documentation Routes - Root redirect
+            - id: auth-service-docs-root
+              uri: no://op
               predicates:
-                - Path=/tenant-management/api/v1/hierarchy/**
+                - Path=/auth-docs
               filters:
-                - StripPrefix=0
+                - RedirectTo=302, /auth-docs/swagger-ui/index.html
 
-            # Compliance Management Routes
-            - id: tenant-compliance-route
-              uri: http://tenant-service:8080
+            # Tenant Service Routes
+            - id: tenant-service
+              uri: ${TENANT_SERVICE_URL:http://localhost:4001}
               predicates:
-                - Path=/tenant-management/api/v1/compliance/**
+                - Path=/api/v1/tenants/**
               filters:
-                - StripPrefix=0
+                - name: CircuitBreaker
+                  args:
+                    name: tenant-service
+                    fallbackUri: forward:/fallback/tenant
+                - name: RateLimiter
+                  args:
+                    requestsPerSecond: 50
+                    burstCapacity: 100
+                - AuthenticationFilter
+                - StripPrefix=2
 
-            # Usage Tracking Routes
-            - id: tenant-usage-route
-              uri: http://tenant-service:8080
+            # Authorization Service Routes
+            - id: authorization-service
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
               predicates:
-                - Path=/tenant-management/api/v1/usage/**
+                - Path=/api/v1/authorization/**
               filters:
-                - StripPrefix=0
+                - name: CircuitBreaker
+                  args:
+                    name: authorization-service
+                    fallbackUri: forward:/fallback/authorization
+                - name: RateLimiter
+                  args:
+                    requestsPerSecond: 100
+                    burstCapacity: 200
+                - AuthenticationFilter
+                - StripPrefix=2
 
-            # Trial Management Routes
-            - id: tenant-trials-route
-              uri: http://tenant-service:8080
+            # User Management Service Routes
+            - id: user-management-service
+              uri: ${USER_SERVICE_URL:http://localhost:4004}
               predicates:
-                - Path=/tenant-management/api/v1/trials/**
+                - Path=/api/v1/users/**
               filters:
-                - StripPrefix=0
+                - name: CircuitBreaker
+                  args:
+                    name: user-service
+                    fallbackUri: forward:/fallback/user
+                - name: RateLimiter
+                  args:
+                    requestsPerSecond: 50
+                    burstCapacity: 100
+                - AuthenticationFilter
+                - StripPrefix=2
 
-            # Actuator Routes
-            - id: tenant-actuator-route
-              uri: http://tenant-service:4001
+            # Notification Service Routes
+            - id: notification-service
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:4402}
               predicates:
-                - Path=/tenant-management/actuator/**
+                - Path=/api/v1/notifications/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: notification-service
+                    fallbackUri: forward:/fallback/notification
+                - name: RateLimiter
+                  args:
+                    requestsPerSecond: 30
+                    burstCapacity: 60
+                - AuthenticationFilter
+                - StripPrefix=2
 
-            # Swagger UI Routes (CRITICAL: Must come before api-docs)
-            - id: tenant-swagger-ui-html-route
-              uri: http://tenant-service:4001
+            # Storage Service Routes
+            - id: storage-service
+              uri: ${STORAGE_SERVICE_URL:http://localhost:4102}
               predicates:
-                - Path=/tenant-management/swagger-ui.html
+                - Path=/api/v1/storage/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: storage-service
+                    fallbackUri: forward:/fallback/storage
+                - name: RateLimiter
+                  args:
+                    requestsPerSecond: 20
+                    burstCapacity: 40
+                - AuthenticationFilter
+                - StripPrefix=2
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - "http://localhost:3000"
+                  - "http://localhost:8080"
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - DELETE
+                  - PATCH
+                  - OPTIONS
+                allowedHeaders:
+                  - "*"
+                allowCredentials: true
+                maxAge: 3600
 
-            - id: tenant-swagger-ui-route
-              uri: http://tenant-service:4001
-              predicates:
-                - Path=/tenant-management/swagger-ui/**
+# Rate Limiting Configuration
+rate-limiting:
+  enabled: true
+  default:
+    requests-per-second: 100
+    burst-capacity: 200
+  per-tenant:
+    enabled: true
+    cache-size: 10000
 
-            # API Docs Route (Must come after Swagger UI routes)
-            - id: tenant-api-docs-route
-              uri: http://tenant-service:4001
-              predicates:
-                - Path=/tenant-management/api-docs/**
+# Resilience4j Circuit Breaker Configuration
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowType: COUNT_BASED
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 10000
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+        recordExceptions:
+          - java.io.IOException
+          - java.net.ConnectException
+          - java.util.concurrent.TimeoutException
+    instances:
+      auth-service:
+        baseConfig: default
+      tenant-service:
+        baseConfig: default
+      authorization-service:
+        baseConfig: default
+      user-service:
+        baseConfig: default
+      notification-service:
+        baseConfig: default
+      storage-service:
+        baseConfig: default
+      auth-service-docs:
+        baseConfig: default
 
-            - id: tenant-api-docs-base-route
-              uri: http://tenant-service:4001
-              predicates:
-                - Path=/tenant-management/api-docs
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 1000
+        retryExceptions:
+          - java.io.IOException
+          - java.net.ConnectException
+    instances:
+      auth-service:
+        baseConfig: default
+      tenant-service:
+        baseConfig: default
 
+# Monitoring Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
-          
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.nnipa.gateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    io.github.resilience4j: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - [%X{correlationId}] - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} - [%thread] - [%X{correlationId}] - %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/api-gateway.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 30
 
+# API Documentation Configuration
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    config-url: /v3/api-docs/swagger-config
+    urls:
+      - url: /v3/api-docs
+        name: API Gateway
+      - url: /auth-docs/api-docs
+        name: Auth Service
+      - url: ${TENANT_SERVICE_URL:http://localhost:4001}/api-docs
+        name: Tenant Service
 
-
+# Custom API Gateway Configuration
+api-gateway:
+  security:
+    jwt-secret: ${JWT_SECRET:dGhpcyBpcyBhIDUxMi1iaXQgc2VjcmV0IGtleSBmb3IgSFM1MTIgand0IHNpZ25pbmcgYWxnb3JpdGhtIGVuY29kZWQgaW4gYmFzZTY0IGZvcm1hdCB0aGF0IHlvdSBjYW4gdXNlIGZvciBzZWN1cmUgdG9rZW4=}
+    jwt-issuer: ${JWT_ISSUER:https://nnipa.cloud}
+    public-paths:
+      - /api/v1/auth/register
+      - /api/v1/auth/login
+      - /api/v1/auth/refresh
+      - /api/v1/auth/forgot-password
+      - /api/v1/auth/reset-password
+      - /actuator/health
+      - /actuator/prometheus
+      - /swagger-ui/**
+      - /v3/api-docs/**
+      - /auth-docs/**
+      - /auth-service/**
+  rate-limiting:
+    enabled: true
+    default-limits:
+      requests-per-second: 100
+      burst-capacity: 200
+    per-tenant-enabled: true
+    cache-size: 10000
+  correlation:
+    header-name: X-Correlation-Id
+    generate-if-missing: true
