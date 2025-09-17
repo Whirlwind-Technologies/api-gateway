@@ -43,7 +43,13 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
                 "/actuator/health",
                 "/actuator/prometheus",
                 "/swagger-ui/**",
-                "/v3/api-docs/**"
+                "/v3/api-docs/**",
+                "/auth-docs/**",
+                "/auth-service/**",
+                "/tenant-docs/**",
+                "/tenant-service/**",
+                "/tenant-health/**",
+                "/tenant-management/**"
         );
     }
 

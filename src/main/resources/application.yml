@@ -78,6 +78,51 @@ spring:
                 - AuthenticationFilter
                 - StripPrefix=2
 
+            # Tenant Service Documentation Routes - Handle direct tenant-management paths (for Swagger UI redirects)
+            - id: tenant-service-management-paths
+              uri: ${TENANT_SERVICE_URL:http://localhost:4001}
+              predicates:
+                - Path=/tenant-management/**
+              filters:
+                - StripPrefix=0
+
+            # Tenant Service Documentation Routes - Direct tenant-service paths (for absolute URLs in swagger config)
+            - id: tenant-service-direct-paths
+              uri: ${TENANT_SERVICE_URL:http://localhost:4001}
+              predicates:
+                - Path=/tenant-service/**
+              filters:
+                - StripPrefix=0
+
+            # Tenant Service Documentation Routes - Catch all for docs
+            - id: tenant-service-docs-catchall
+              uri: ${TENANT_SERVICE_URL:http://localhost:4001}
+              predicates:
+                - Path=/tenant-docs/**
+              filters:
+                - RewritePath=/tenant-docs/(?<segment>.*), /tenant-management/$\{segment}
+                - AddRequestHeader=X-Forwarded-Proto, http
+                - AddRequestHeader=X-Forwarded-Host, localhost:4000
+                - AddRequestHeader=X-Forwarded-Port, 4000
+                - AddRequestHeader=X-Forwarded-Prefix, /tenant-docs
+
+            # Tenant Service Documentation Routes - Root redirect
+            - id: tenant-service-docs-root
+              uri: no://op
+              predicates:
+                - Path=/tenant-docs
+              filters:
+                - RedirectTo=302, /tenant-docs/swagger-ui/index.html
+
+            # Tenant Service Health Check Route (optional - for direct access through gateway)
+            - id: tenant-service-health
+              uri: ${TENANT_SERVICE_URL:http://localhost:4001}
+              predicates:
+                - Path=/tenant-health/**
+              filters:
+                - RewritePath=/tenant-health/(?<segment>.*), /tenant-management/actuator/$\{segment}
+
+
             # Authorization Service Routes
             - id: authorization-service
               uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
@@ -270,7 +315,7 @@ springdoc:
         name: API Gateway
       - url: /auth-docs/api-docs
         name: Auth Service
-      - url: ${TENANT_SERVICE_URL:http://localhost:4001}/api-docs
+      - url: /tenant-docs/api-docs
         name: Tenant Service
 
 # Custom API Gateway Configuration
@@ -290,6 +335,10 @@ api-gateway:
       - /v3/api-docs/**
       - /auth-docs/**
       - /auth-service/**
+      - /tenant-docs/**
+      - /tenant-service/**
+      - /tenant-health/**
+      - /tenant-management/**
   rate-limiting:
     enabled: true
     default-limits:
