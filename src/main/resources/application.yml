@@ -32,6 +32,10 @@ spring:
                     requestsPerSecond: 100
                     burstCapacity: 200
                 - RewritePath=/api/v1/auth/(?<segment>.*), /auth-service/api/v1/auth/${segment}
+              metadata:
+                # Route-specific timeout
+                response-timeout: 5000
+                connect-timeout: 2000
 
             # Auth Service Documentation Routes - Direct auth-service paths (for absolute URLs in swagger config)
             - id: auth-service-direct-paths
@@ -237,6 +241,9 @@ resilience4j:
     instances:
       auth-service:
         baseConfig: default
+        waitDurationInOpenState: 30000  # 30 seconds for auth service
+        minimumNumberOfCalls: 3         # Reduce for faster circuit breaker activation
+        failureRateThreshold: 60        # Allow slightly more failures
       tenant-service:
         baseConfig: default
       authorization-service:
@@ -263,6 +270,20 @@ resilience4j:
         baseConfig: default
       tenant-service:
         baseConfig: default
+
+  # Add timeout configuration
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 3000  # 3 seconds default
+        cancelRunningFuture: true
+    instances:
+      auth-service:
+        baseConfig: default
+        timeoutDuration: 5000  # 5 seconds for auth operations
+      tenant-service:
+        baseConfig: default
+        timeoutDuration: 4000  # 4 seconds for tenant operations
 
 # Monitoring Configuration
 management:
