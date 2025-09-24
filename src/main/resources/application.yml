@@ -51,7 +51,7 @@ spring:
               predicates:
                 - Path=/auth-docs/**
               filters:
-                - RewritePath=/auth-docs/(?<segment>.*), /auth-service/$\{segment}
+                - RewritePath=/auth-docs/(?<segment>.*), /auth-service/${segment}
                 - AddRequestHeader=X-Forwarded-Proto, http
                 - AddRequestHeader=X-Forwarded-Host, localhost:4000
                 - AddRequestHeader=X-Forwarded-Port, 4000
@@ -104,7 +104,7 @@ spring:
               predicates:
                 - Path=/tenant-docs/**
               filters:
-                - RewritePath=/tenant-docs/(?<segment>.*), /tenant-management/$\{segment}
+                - RewritePath=/tenant-docs/(?<segment>.*), /tenant-management/${segment}
                 - AddRequestHeader=X-Forwarded-Proto, http
                 - AddRequestHeader=X-Forwarded-Host, localhost:4000
                 - AddRequestHeader=X-Forwarded-Port, 4000
@@ -124,11 +124,34 @@ spring:
               predicates:
                 - Path=/tenant-health/**
               filters:
-                - RewritePath=/tenant-health/(?<segment>.*), /tenant-management/actuator/$\{segment}
+                - RewritePath=/tenant-health/(?<segment>.*), /tenant-management/actuator/${segment}
 
+            # ==============================================
+            # AUTHORIZATION SERVICE ROUTES (FIXED)
+            # ==============================================
 
-            # Authorization Service Routes
+            # Primary Authorization Service Routes - Fixed to include context path
             - id: authorization-service
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/api/v1/authz/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: authorization-service
+                    fallbackUri: forward:/fallback/authorization
+                - name: RateLimiter
+                  args:
+                    requestsPerSecond: 200
+                    burstCapacity: 400
+                - AuthenticationFilter
+                - RewritePath=/api/v1/authz/(?<segment>.*), /authz/api/v1/authz/${segment}
+              metadata:
+                response-timeout: 3000
+                connect-timeout: 1500
+
+            # Authorization Service Routes - Legacy compatibility (fixed)
+            - id: authorization-service-legacy
               uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
               predicates:
                 - Path=/api/v1/authorization/**
@@ -139,10 +162,115 @@ spring:
                     fallbackUri: forward:/fallback/authorization
                 - name: RateLimiter
                   args:
-                    requestsPerSecond: 100
-                    burstCapacity: 200
+                    requestsPerSecond: 200
+                    burstCapacity: 400
                 - AuthenticationFilter
-                - StripPrefix=2
+                - RewritePath=/api/v1/authorization/(?<segment>.*), /authz/api/v1/authz/${segment}
+              metadata:
+                response-timeout: 3000
+                connect-timeout: 1500
+
+            # Authorization Service Documentation Routes - Fixed context path
+            - id: authz-service-direct-paths
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/authz-service/**
+              filters:
+                - RewritePath=/authz-service/(?<segment>.*), /authz/${segment}
+                - AddRequestHeader=X-Forwarded-Proto, http
+                - AddRequestHeader=X-Forwarded-Host, localhost:4000
+                - AddRequestHeader=X-Forwarded-Port, 4000
+
+            # Authorization Service Documentation Routes - Fixed rewrite
+            - id: authz-service-docs-catchall
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/authz-docs/**
+              filters:
+                - RewritePath=/authz-docs/(?<segment>.*), /authz/${segment}
+                - AddRequestHeader=X-Forwarded-Proto, http
+                - AddRequestHeader=X-Forwarded-Host, localhost:4000
+                - AddRequestHeader=X-Forwarded-Port, 4000
+                - AddRequestHeader=X-Forwarded-Prefix, /authz-docs
+
+            # Authorization Service Documentation Routes - Root redirect (fixed)
+            - id: authz-service-docs-root
+              uri: no://op
+              predicates:
+                - Path=/authz-docs
+              filters:
+                - RedirectTo=302, /authz-docs/swagger-ui/index.html
+
+            # Authorization Service Documentation Routes - Static resources fallback
+            - id: authz-service-docs-static
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/authz-docs/swagger-ui/**
+              filters:
+                - RewritePath=/authz-docs/swagger-ui/(?<segment>.*), /authz/swagger-ui/${segment}
+                - AddRequestHeader=X-Forwarded-Proto, http
+                - AddRequestHeader=X-Forwarded-Host, localhost:4000
+                - AddRequestHeader=X-Forwarded-Port, 4000
+
+            # Authorization Service Health Check Route - Fixed context path
+            - id: authz-service-health
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/authz-health/**
+              filters:
+                - RewritePath=/authz-health/(?<segment>.*), /authz/actuator/${segment}
+
+            # Authorization Service - Admin routes (fixed context path)
+            - id: authz-service-admin
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/api/v1/authz/admin/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: authorization-service
+                    fallbackUri: forward:/fallback/authorization
+                - name: RateLimiter
+                  args:
+                    requestsPerSecond: 50
+                    burstCapacity: 100
+                - AuthenticationFilter
+                - RewritePath=/api/v1/authz/admin/(?<segment>.*), /authz/api/v1/authz/admin/${segment}
+              metadata:
+                response-timeout: 5000
+                connect-timeout: 2000
+
+            # Authorization Service Documentation Routes - Direct Swagger UI access (ADD THIS)
+            - id: authz-service-swagger-ui-direct
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/authz/swagger-ui/**
+              filters:
+                - StripPrefix=0
+
+            # Authorization Service Documentation Routes - Direct API docs access (ADD THIS)
+            - id: authz-service-api-docs-direct
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/authz/v3/api-docs/**
+              filters:
+                - StripPrefix=0
+
+            # Authorization Service Documentation Routes - API docs root path (ADD THIS)
+            - id: authz-service-api-docs-root
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/authz/api-docs/**
+              filters:
+                - StripPrefix=0
+
+            # Authorization Service Documentation Routes - Direct webjars access (ADD THIS)
+            - id: authz-service-webjars-direct
+              uri: ${AUTHZ_SERVICE_URL:http://localhost:4003}
+              predicates:
+                - Path=/authz/webjars/**
+              filters:
+                - StripPrefix=0
 
             # User Management Service Routes
             - id: user-management-service
@@ -160,6 +288,39 @@ spring:
                     burstCapacity: 100
                 - AuthenticationFilter
                 - StripPrefix=2
+
+            # User Management Service Documentation Routes
+            - id: user-service-direct-paths
+              uri: ${USER_SERVICE_URL:http://localhost:4004}
+              predicates:
+                - Path=/user-service/**
+              filters:
+                - StripPrefix=0
+
+            - id: user-service-docs-catchall
+              uri: ${USER_SERVICE_URL:http://localhost:4004}
+              predicates:
+                - Path=/user-docs/**
+              filters:
+                - RewritePath=/user-docs/(?<segment>.*), /${segment}
+                - AddRequestHeader=X-Forwarded-Proto, http
+                - AddRequestHeader=X-Forwarded-Host, localhost:4000
+                - AddRequestHeader=X-Forwarded-Port, 4000
+                - AddRequestHeader=X-Forwarded-Prefix, /user-docs
+
+            - id: user-service-docs-root
+              uri: no://op
+              predicates:
+                - Path=/user-docs
+              filters:
+                - RedirectTo=302, /user-docs/swagger-ui.html
+
+            - id: user-service-health
+              uri: ${USER_SERVICE_URL:http://localhost:4004}
+              predicates:
+                - Path=/user-health/**
+              filters:
+                - RewritePath=/user-health/(?<segment>.*), /actuator/${segment}
 
             # Notification Service Routes
             - id: notification-service
@@ -194,6 +355,7 @@ spring:
                     burstCapacity: 40
                 - AuthenticationFilter
                 - StripPrefix=2
+
           globalcors:
             cors-configurations:
               '[/**]':
@@ -248,6 +410,9 @@ resilience4j:
         baseConfig: default
       authorization-service:
         baseConfig: default
+        failureRateThreshold: 70        # More tolerant for frequent authorization calls
+        slidingWindowSize: 15           # Larger sample size for better accuracy
+        minimumNumberOfCalls: 8         # Higher threshold before circuit opens
       user-service:
         baseConfig: default
       notification-service:
@@ -270,6 +435,9 @@ resilience4j:
         baseConfig: default
       tenant-service:
         baseConfig: default
+      authorization-service:
+        maxAttempts: 2
+        waitDuration: 500  # Faster retry for authorization service
 
   # Add timeout configuration
   timelimiter:
@@ -284,6 +452,9 @@ resilience4j:
       tenant-service:
         baseConfig: default
         timeoutDuration: 4000  # 4 seconds for tenant operations
+      authorization-service:
+        baseConfig: default
+        timeoutDuration: 3000  # Fast timeout for authorization checks
 
 # Monitoring Configuration
 management:
@@ -335,9 +506,13 @@ springdoc:
       - url: /v3/api-docs
         name: API Gateway
       - url: /auth-docs/api-docs
-        name: Auth Service
+        name: Authentication Service
+      - url: /authz-docs/api-docs
+        name: Authorization Service
       - url: /tenant-docs/api-docs
-        name: Tenant Service
+        name: Tenant Management Service
+      - url: /user-docs/api-docs
+        name: User Management Service
 
 # Custom API Gateway Configuration
 api-gateway:
@@ -356,10 +531,16 @@ api-gateway:
       - /v3/api-docs/**
       - /auth-docs/**
       - /auth-service/**
+      - /authz-docs/**
+      - /authz-service/**
+      - /authz-health/**
       - /tenant-docs/**
       - /tenant-service/**
       - /tenant-health/**
       - /tenant-management/**
+      - /user-docs/**
+      - /user-service/**
+      - /user-health/**
   rate-limiting:
     enabled: true
     default-limits:
